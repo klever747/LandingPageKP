@@ -70,6 +70,15 @@ p{ margin: 0 0 1em; color: var(--ink-soft); }
 .nav-toggle{ display:none; background:none; border:0; cursor:pointer; padding:6px; }
 .nav-toggle span{ display:block; width:24px; height:2px; background: var(--navy-dark); margin:5px 0; transition: .2s; }
 
+.header-social{ display:flex; gap:8px; }
+.header-social a{
+  width:32px; height:32px; border-radius:8px; background: var(--bg-soft);
+  display:flex; align-items:center; justify-content:center; transition: background .15s ease;
+}
+.header-social a:hover{ background: var(--teal); }
+.header-social svg{ width:16px; height:16px; stroke: var(--navy-dark); fill:none; stroke-width:1.5; }
+.header-social a:hover svg{ stroke:#fff; }
+
 /* Hero */
 .hero{ padding: 72px 0 48px; background: linear-gradient(180deg, var(--bg-soft), #fff); }
 .hero-grid{ display:grid; grid-template-columns: 1.15fr .85fr; gap: 48px; align-items:center; }
@@ -198,7 +207,7 @@ section{ padding: 84px 0; }
 }
 
 @media (max-width: 720px){
-  .nav, .nav-cta{ display:none; }
+  .nav, .nav-cta, .header-social{ display:none; }
   .nav-toggle{ display:block; }
   .site-header.open .nav{
     display:flex; flex-direction:column; gap:0; position:absolute; top:100%; left:0; right:0;
