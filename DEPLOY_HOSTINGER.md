@@ -55,14 +55,14 @@ git clone https://TU_TOKEN@github.com/klever747/LandingPageKP.git
 
 ## 4. Levanta el contenedor
 
-Para exponer el sitio directamente en el puerto 80 (recomendado si aún no
-tienes dominio), edita `docker-compose.yml` y cambia el mapeo de puertos:
+Por defecto `docker-compose.yml` publica el sitio en el **puerto 8089**
+(`http://TU_IP_DEL_VPS:8089`). Si prefieres otro puerto, edita el mapeo:
 
 ```yaml
 services:
   web:
     ports:
-      - "80:80"   # en vez de "8080:80"
+      - "8089:80"   # cambia el primer número por el puerto que prefieras
 ```
 
 Luego construye y arranca:
@@ -77,21 +77,21 @@ docker compose logs -f web   # para ver logs si algo falla (Ctrl+C para salir)
 
 **a) Firewall de Hostinger (hPanel):**
 hPanel → tu VPS → pestaña **Firewall** → crea/activa reglas que permitan
-tráfico entrante TCP en el puerto **80** (y **443** si más adelante usas
-HTTPS). El puerto 22 (SSH) normalmente ya está permitido.
+tráfico entrante TCP en el puerto **8089** (y **443** si más adelante usas
+HTTPS con dominio). El puerto 22 (SSH) normalmente ya está permitido.
 
 **b) Firewall del sistema (si usas `ufw`):**
 
 ```bash
 ufw allow 22/tcp
-ufw allow 80/tcp
+ufw allow 8089/tcp
 ufw allow 443/tcp
 ufw status
 ```
 
 ## 6. Verifica que funciona
 
-Abre en el navegador: `http://TU_IP_DEL_VPS`
+Abre en el navegador: `http://TU_IP_DEL_VPS:8089`
 
 Deberías ver la landing page. Si no carga, revisa en este orden:
 `docker ps` (¿el contenedor sigue corriendo?) → `docker compose logs web`
@@ -121,14 +121,14 @@ certificado SSL automáticamente, sin configuración manual de Certbot.
 services:
   web:
     ports:
-      - "127.0.0.1:8080:80"   # ya no expuesto directamente a internet
+      - "127.0.0.1:8089:80"   # ya no expuesto directamente a internet
 ```
 
 **b)** Crea `Caddyfile` en la misma carpeta del proyecto:
 
 ```
 tudominio.com {
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy 127.0.0.1:8089
 }
 ```
 
