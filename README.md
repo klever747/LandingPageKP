@@ -29,15 +29,22 @@ publicarse en GitHub y desplegarse en cualquier VPS mediante Docker.
 Antes de publicar, edita en `public/index.html`:
 
 - Nombre/marca: busca `KP Soluciones` y `brand-name`.
-- Datos de contacto: sección `<section class="contacto">` — reemplaza el correo
-  (`contacto@tudominio.com`) y el teléfono (`+500 0000 0000`) por los reales.
+- Datos de contacto: sección `<section class="contacto">` (correo, teléfono y
+  ubicación).
 - Textos de cada servicio dentro de `<section class="servicios">`.
 
-El formulario de contacto no tiene backend: al enviarse abre el cliente de
-correo del visitante con el mensaje precargado (`mailto:`). Si más adelante
-quieres recibir los mensajes directamente (por ejemplo con Formspree, un
-webhook propio o un backend en Node/PHP), reemplaza el manejador del evento
-`submit` en `public/js/script.js`.
+El formulario de contacto envía los mensajes mediante
+[Formspree](https://formspree.io) (sin backend propio). Para activarlo:
+
+1. Crea una cuenta gratuita en https://formspree.io/register.
+2. Crea un formulario nuevo y confirma el correo de destino
+   (`kleverpardo747@gmail.com`).
+3. Copia el endpoint que te da Formspree (`https://formspree.io/f/xxxxxxx`) y
+   pégalo en el atributo `action` del `<form id="contactForm">` dentro de
+   `public/index.html`, reemplazando `TU_FORM_ID`.
+
+Si prefieres otra solución (un backend propio en Node/PHP, un webhook, etc.),
+reemplaza el manejador del evento `submit` en `public/js/script.js`.
 
 ## Ver el sitio en local
 
