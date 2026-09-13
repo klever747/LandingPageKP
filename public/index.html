@@ -267,7 +267,7 @@
         </ul>
       </div>
 
-      <form class="contacto-form" id="contactForm" novalidate>
+      <form class="contacto-form" id="contactForm" method="POST" action="https://formspree.io/f/TU_FORM_ID" novalidate>
         <div class="form-row">
           <label for="nombre">Nombre</label>
           <input type="text" id="nombre" name="nombre" required autocomplete="name">
@@ -289,8 +289,14 @@
           <label for="mensaje">Mensaje</label>
           <textarea id="mensaje" name="mensaje" rows="4" required></textarea>
         </div>
+
+        <!-- Campos ocultos para Formspree -->
+        <input type="hidden" name="_subject" value="Nuevo mensaje de contacto - KP Soluciones">
+        <input type="hidden" name="_replyto" id="replyTo">
+        <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
+
         <button type="submit" class="btn btn-primary btn-block">Enviar mensaje</button>
-        <p class="form-note" id="formNote"></p>
+        <p class="form-note" id="formNote" role="status"></p>
       </form>
     </div>
   </section>
