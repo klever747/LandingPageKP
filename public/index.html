@@ -254,20 +254,20 @@
         <ul class="contacto-datos">
           <li>
             <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke-width="1.5"/><path d="m4 5 8 7 8-7" fill="none" stroke-width="1.5"/></svg>
-            <a href="mailto:contacto@tudominio.com" id="emailLink">contacto@tudominio.com</a>
+            <a href="mailto:kleverpardo747@gmail.com" id="emailLink">kleverpardo747@gmail.com</a>
           </li>
           <li>
             <svg viewBox="0 0 24 24"><path d="M5 4h3l2 5-2 1a11 11 0 0 0 6 6l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg>
-            <a href="tel:+50000000000" id="phoneLink">+500 0000 0000</a>
+            <a href="tel:+593989574272" id="phoneLink">+593 98 957 4272</a>
           </li>
           <li>
             <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7Z" fill="none" stroke-width="1.5"/><circle cx="12" cy="9" r="2.5"/></svg>
-            <span>Atención remota y visitas presenciales</span>
+            <span>Ecuador, Santo Domingo</span>
           </li>
         </ul>
       </div>
 
-      <form class="contacto-form" id="contactForm" novalidate>
+      <form class="contacto-form" id="contactForm" method="POST" action="https://formspree.io/f/TU_FORM_ID" novalidate>
         <div class="form-row">
           <label for="nombre">Nombre</label>
           <input type="text" id="nombre" name="nombre" required autocomplete="name">
@@ -289,8 +289,14 @@
           <label for="mensaje">Mensaje</label>
           <textarea id="mensaje" name="mensaje" rows="4" required></textarea>
         </div>
+
+        <!-- Campos ocultos para Formspree -->
+        <input type="hidden" name="_subject" value="Nuevo mensaje de contacto - KP Soluciones">
+        <input type="hidden" name="_replyto" id="replyTo">
+        <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
+
         <button type="submit" class="btn btn-primary btn-block">Enviar mensaje</button>
-        <p class="form-note" id="formNote"></p>
+        <p class="form-note" id="formNote" role="status"></p>
       </form>
     </div>
   </section>
