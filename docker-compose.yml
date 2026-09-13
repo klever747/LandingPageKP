@@ -1,0 +1,8 @@
+services:
+  web:
+    build: .
+    image: landingpage-kp:latest
+    container_name: landingpage-kp
+    restart: unless-stopped
+    ports:
+      - "8080:80"
