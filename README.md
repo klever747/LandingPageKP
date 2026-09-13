@@ -29,8 +29,8 @@ publicarse en GitHub y desplegarse en cualquier VPS mediante Docker.
 Antes de publicar, edita en `public/index.html`:
 
 - Nombre/marca: busca `KP Soluciones` y `brand-name`.
-- Datos de contacto: sección `<section class="contacto">` — reemplaza el correo
-  (`contacto@tudominio.com`) y el teléfono (`+500 0000 0000`) por los reales.
+- Datos de contacto: sección `<section class="contacto">` (correo, teléfono y
+  ubicación).
 - Textos de cada servicio dentro de `<section class="servicios">`.
 
 El formulario de contacto no tiene backend: al enviarse abre el cliente de
