@@ -79,7 +79,7 @@ docker compose up -d --build
 ```
 
 Esto construye la imagen con Nginx sirviendo el sitio y lo publica en el
-puerto **8080** del VPS (`http://IP_DEL_VPS:8080`). Puedes cambiar el puerto
+puerto **8089** del VPS (`http://IP_DEL_VPS:8089`). Puedes cambiar el puerto
 editando `docker-compose.yml` (por ejemplo `"80:80"` si el puerto 80 está
 libre).
 
@@ -94,7 +94,7 @@ docker compose up -d --build
 
 ```bash
 docker build -t landingpage-kp .
-docker run -d --name landingpage-kp --restart unless-stopped -p 8080:80 landingpage-kp
+docker run -d --name landingpage-kp --restart unless-stopped -p 8089:80 landingpage-kp
 ```
 
 ### 3. Exponer con dominio propio y HTTPS
@@ -104,10 +104,10 @@ con certificado SSL, coloca por delante un proxy inverso en el VPS, por
 ejemplo:
 
 - **Nginx Proxy Manager** o **Traefik**, apuntando al contenedor
-  (`landingpage-kp:80` en la misma red Docker, o `IP_VPS:8080` si expones el
+  (`landingpage-kp:80` en la misma red Docker, o `IP_VPS:8089` si expones el
   puerto).
 - O un Nginx/Caddy instalado directamente en el VPS haciendo `proxy_pass` a
-  `http://127.0.0.1:8080` y gestionando el certificado con Let's Encrypt
+  `http://127.0.0.1:8089` y gestionando el certificado con Let's Encrypt
   (Certbot o el propio Caddy, que lo hace automático).
 
 Ejemplo mínimo de bloque Nginx como proxy inverso en el host:
@@ -118,7 +118,7 @@ server {
     server_name tudominio.com;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8089;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
