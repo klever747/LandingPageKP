@@ -28,7 +28,7 @@ publicarse en GitHub y desplegarse en cualquier VPS mediante Docker.
 
 Antes de publicar, edita en `public/index.html`:
 
-- Nombre/marca: busca `KP Soluciones` y `brand-name`.
+- Nombre/marca: busca `ARK Tech Solutions & Data` y `brand-name`.
 - Datos de contacto: sección `<section class="contacto">` (correo, teléfono y
   ubicación).
 - Textos de cada servicio dentro de `<section class="servicios">`.
