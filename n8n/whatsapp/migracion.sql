@@ -1,0 +1,45 @@
+-- Migración para el flujo "CONEXION API-WHATSAPP" optimizado.
+-- Es aditiva e idempotente: se puede ejecutar varias veces sin romper nada.
+-- Ejecutar ANTES de importar el nuevo flujo en n8n.
+
+BEGIN;
+
+-- 1) Marca de bienvenida en el lead: reemplaza el COUNT(*) sobre messages
+--    que se hacía en cada mensaje entrante.
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS welcome_sent_at timestamptz;
+
+-- 2) Id del mensaje de WhatsApp (wamid) y tipo, para deduplicar los
+--    reintentos de Meta y no perder mensajes que no son de texto.
+ALTER TABLE public.messages
+  ADD COLUMN IF NOT EXISTS wa_message_id text,
+  ADD COLUMN IF NOT EXISTS msg_type      text NOT NULL DEFAULT 'text';
+
+-- 3) Índices
+--    Único por wamid (los NULL históricos no chocan entre sí).
+CREATE UNIQUE INDEX IF NOT EXISTS messages_wa_message_id_key
+  ON public.messages (wa_message_id);
+
+--    Para leer el historial de una conversación (panel, CRM, IA, etc.).
+CREATE INDEX IF NOT EXISTS messages_lead_id_time_idx
+  ON public.messages (lead_id, time DESC);
+
+-- 4) Backfill: los leads que ya recibieron el saludo del bot no deben
+--    recibirlo de nuevo con el flujo nuevo.
+UPDATE public.leads l
+SET    welcome_sent_at = b.primera
+FROM  (SELECT phone, MIN(time) AS primera
+       FROM   public.messages
+       WHERE  sender = 'bot'
+       GROUP  BY phone) b
+WHERE  l.phone = b.phone
+  AND  l.welcome_sent_at IS NULL;
+
+COMMIT;
+
+-- Opcional: si el índice antiguo (phone, sender) existía solo para el
+-- COUNT(*) del flujo anterior, ya no hace falta. Revísalo con:
+--   SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'messages';
+
+-- Opcional (retención): borrar conversaciones de más de 12 meses.
+--   DELETE FROM public.messages WHERE time < NOW() - INTERVAL '12 months';
