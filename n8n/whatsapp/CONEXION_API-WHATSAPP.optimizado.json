@@ -110,7 +110,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Convierte el payload de Meta en 1 item por mensaje recibido.\n// - Recorre TODOS los entry/changes/messages (Meta puede agrupar varios).\n// - Ignora los webhooks de estado (sent/delivered/read): devuelve [] y la\n//   ejecución termina aquí sin tocar la base de datos.\nconst BIENVENIDA = (nombre) =>\n  `Hola ${nombre || ''}, gracias por escribirnos. ¿En qué te podemos ayudar?`.replace('Hola ,', 'Hola,');\n\nfunction extraerTexto(m) {\n  switch (m.type) {\n    case 'text':        return m.text?.body ?? '';\n    case 'button':      return m.button?.text ?? '';\n    case 'interactive': return m.interactive?.button_reply?.title\n                            ?? m.interactive?.list_reply?.title ?? '[interactive]';\n    case 'image':\n    case 'video':\n    case 'document':    return m[m.type]?.caption || `[${m.type}]`;\n    case 'location':    return `[location] ${m.location?.latitude},${m.location?.longitude}`;\n    default:            return `[${m.type}]`;   // audio, sticker, reaction, etc.\n  }\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  for (const entry of item.json.body?.entry ?? []) {\n    for (const change of entry.changes ?? []) {\n      const v = change.value ?? {};\n      if (!Array.isArray(v.messages)) continue;\n\n      const nombres = {};\n      for (const c of v.contacts ?? []) nombres[c.wa_id] = c.profile?.name ?? '';\n\n      for (const m of v.messages) {\n        if (m.type === 'reaction') continue;   // no aporta a la conversación\n        const nombre = nombres[m.from] ?? '';\n        out.push({\n          json: {\n            wa_message_id: m.id,\n            phone: m.from,\n            nombre_cliente: nombre,\n            tipo: m.type,\n            mensaje_cliente: extraerTexto(m),\n            ts: Number(m.timestamp) || Math.floor(Date.now() / 1000),\n            texto_bienvenida: BIENVENIDA(nombre),\n          },\n        });\n      }\n    }\n  }\n}\nreturn out;\n"
+        "jsCode": "// Convierte el payload de Meta en 1 item por mensaje recibido.\n// - Recorre TODOS los entry/changes/messages (Meta puede agrupar varios).\n// - Ignora los webhooks de estado (sent/delivered/read): devuelve [] y la\n//   ejecución termina aquí sin tocar la base de datos.\nfunction extraerTexto(m) {\n  switch (m.type) {\n    case 'text':        return m.text?.body ?? '';\n    case 'button':      return m.button?.text ?? '';\n    case 'interactive': return m.interactive?.button_reply?.title\n                            ?? m.interactive?.list_reply?.title ?? '[interactive]';\n    case 'image':\n    case 'video':\n    case 'document':    return m[m.type]?.caption || `[${m.type}]`;\n    case 'location':    return `[location] ${m.location?.latitude},${m.location?.longitude}`;\n    default:            return `[${m.type}]`;   // audio, sticker, reaction, etc.\n  }\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  for (const entry of item.json.body?.entry ?? []) {\n    for (const change of entry.changes ?? []) {\n      const v = change.value ?? {};\n      if (!Array.isArray(v.messages)) continue;\n\n      const nombres = {};\n      for (const c of v.contacts ?? []) nombres[c.wa_id] = c.profile?.name ?? '';\n\n      for (const m of v.messages) {\n        if (m.type === 'reaction') continue;   // no aporta a la conversación\n        const nombre = nombres[m.from] ?? '';\n        out.push({\n          json: {\n            wa_message_id: m.id,\n            phone: m.from,\n            nombre_cliente: nombre,\n            tipo: m.type,\n            mensaje_cliente: extraerTexto(m),\n            ts: Number(m.timestamp) || Math.floor(Date.now() / 1000),\n          },\n        });\n      }\n    }\n  }\n}\nreturn out;\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -124,7 +124,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- 1 sola consulta (antes eran 3): upsert del lead + insert del mensaje\n-- deduplicado por wamid + reclamo atómico del saludo de bienvenida.\nWITH lead AS (\n  INSERT INTO public.leads (phone, name, source, temp, status, stage,\n                            last_message, last_message_time, welcome_sent_at)\n  VALUES ($1, NULLIF($2, ''), 'whatsapp', 'caliente', 'nuevo', 'lead',\n          $3, to_timestamp($5::bigint), NOW())\n  ON CONFLICT (phone) DO UPDATE SET\n    name              = COALESCE(EXCLUDED.name, leads.name),\n    -- Solo si es más reciente (Meta puede reintentar o desordenar webhooks).\n    last_message      = CASE WHEN EXCLUDED.last_message_time >= COALESCE(leads.last_message_time, '-infinity')\n                             THEN EXCLUDED.last_message ELSE leads.last_message END,\n    last_message_time = GREATEST(leads.last_message_time, EXCLUDED.last_message_time),\n    welcome_sent_at   = COALESCE(leads.welcome_sent_at, NOW())\n  RETURNING id, welcome_sent_at\n), msg AS (\n  INSERT INTO public.messages (lead_id, phone, sender, text, time, wa_message_id, msg_type)\n  SELECT id, $1, 'cliente', $3, to_timestamp($5::bigint), $4, $6\n  FROM lead\n  ON CONFLICT (wa_message_id) DO NOTHING\n  RETURNING id\n)\nSELECT\n  lead.id                          AS lead_id,\n  $1::text                         AS phone,\n  EXISTS (SELECT 1 FROM msg)       AS mensaje_nuevo,\n  -- NOW() es la hora de inicio de ESTA transacción: solo es igual si el\n  -- saludo se reclamó en esta misma ejecución (lead nuevo o sin saludo).\n  (lead.welcome_sent_at = NOW())   AS enviar_bienvenida\nFROM lead;",
+        "query": "-- 1 sola consulta: upsert del lead + insert del mensaje deduplicado por wamid.\n-- Devuelve la etapa actual del bot para decidir qué responder.\nWITH lead AS (\n  INSERT INTO public.leads (phone, name, source, temp, status, stage,\n                            last_message, last_message_time)\n  VALUES ($1, NULLIF($2, ''), 'whatsapp', 'caliente', 'nuevo', 'lead',\n          $3, to_timestamp($5::bigint))\n  ON CONFLICT (phone) DO UPDATE SET\n    name              = COALESCE(EXCLUDED.name, leads.name),\n    -- Solo si es más reciente (Meta puede reintentar o desordenar webhooks).\n    last_message      = CASE WHEN EXCLUDED.last_message_time >= COALESCE(leads.last_message_time, '-infinity')\n                             THEN EXCLUDED.last_message ELSE leads.last_message END,\n    last_message_time = GREATEST(leads.last_message_time, EXCLUDED.last_message_time)\n  RETURNING id, bot_stage\n), msg AS (\n  INSERT INTO public.messages (lead_id, phone, sender, text, time, wa_message_id, msg_type)\n  SELECT id, $1, 'cliente', $3, to_timestamp($5::bigint), $4, $6\n  FROM lead\n  ON CONFLICT (wa_message_id) DO NOTHING\n  RETURNING id\n)\nSELECT\n  lead.id                    AS lead_id,\n  $1::text                   AS phone,\n  lead.bot_stage             AS bot_stage,\n  EXISTS (SELECT 1 FROM msg) AS mensaje_nuevo\nFROM lead;",
         "options": {
           "queryBatching": "independently",
           "queryReplacement": "={{ [$json.phone, $json.nombre_cliente, $json.mensaje_cliente, $json.wa_message_id, $json.ts, $json.tipo] }}"
@@ -147,6 +147,43 @@
     },
     {
       "parameters": {
+        "jsCode": "// ===================== CONFIGURA AQUÍ LOS TEXTOS =====================\n// Información de los terrenos. Si lo dejas vacío, el bot solo avisa que un\n// asesor se comunicará. Ejemplo:\n// const INFO_TERRENOS = '🏡 *Nuestros terrenos*\\n• Ubicación: ...\\n• Medidas: ...\\n• Precio desde: ...\\n• Formas de pago: ...';\nconst INFO_TERRENOS = '';\n\nconst BIENVENIDA = (nombre) =>\n  `Hola${nombre ? ' ' + nombre : ''} 👋, gracias por escribirnos.\\n` +\n  `Por este medio te brindamos información sobre nuestros *terrenos*.\\n\\n` +\n  `Responde *1* o escribe *terrenos* para recibir la información.`;\n\nconst SALUDO_CORTO = (nombre) => `Hola${nombre ? ' ' + nombre : ''} 👋, gracias por escribirnos.`;\n\nconst FUERA_DE_TEMA =\n  'Por este medio solo podemos ayudarte con información sobre nuestros *terrenos*. ' +\n  '¿Te gustaría recibirla? Responde *1* o escribe *terrenos*.';\n\nconst ASESOR =\n  'En un momento un asesor se comunicará contigo para darte más detalles y resolver tus dudas. 🙌';\n\n// Palabras que indican que el cliente quiere información de los terrenos.\nconst INTERES = /\\b(1|si|terrenos?|lotes?|solar(es)?|info|informacion|precios?|costos?|cuanto|cuesta|valor|ubicacion|donde|metros|m2|medidas|financiamiento|credito|cuotas|pagos?|disponibles?|venta|comprar|quiero|interesa|interesado|interesada)\\b/;\n// =====================================================================\n\n// Etapas del bot (columna leads.bot_stage):\n//   NULL        -> lead nuevo, aún no se le saluda\n//   bienvenida  -> se envió el saludo, esperando que pida info\n//   aclaracion  -> escribió algo fuera de tema una vez\n//   asesor      -> se derivó a un asesor; el bot ya NO responde\nconst normalizar = (t) =>\n  (t || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n\nconst unir = (...partes) => partes.filter(Boolean).join('\\n\\n');\n\nconst out = [];\n$input.all().forEach((item, i) => {\n  const { lead_id, phone, bot_stage, mensaje_nuevo } = item.json;\n  if (!mensaje_nuevo || bot_stage === 'asesor') return;   // duplicado o ya con asesor\n\n  const entrada = $('Normalizar mensajes').itemMatching(i).json;\n  const nombre = entrada.nombre_cliente;\n  const interes = INTERES.test(normalizar(entrada.mensaje_cliente));\n\n  let respuesta, siguiente;\n  if (!bot_stage) {\n    // Primer mensaje. Si ya pide info (\"quiero info de los terrenos\"),\n    // se saluda y se deriva en un solo mensaje.\n    if (interes) { respuesta = unir(SALUDO_CORTO(nombre), INFO_TERRENOS, ASESOR); siguiente = 'asesor'; }\n    else         { respuesta = BIENVENIDA(nombre);                                siguiente = 'bienvenida'; }\n  } else if (interes) {\n    respuesta = unir(INFO_TERRENOS, ASESOR); siguiente = 'asesor';\n  } else if (bot_stage === 'bienvenida') {\n    respuesta = FUERA_DE_TEMA;               siguiente = 'aclaracion';\n  } else {\n    // Segundo mensaje fuera de tema: no insistir, pasar a un asesor.\n    respuesta = ASESOR;                      siguiente = 'asesor';\n  }\n\n  out.push({\n    json: { lead_id, phone, etapa_actual: bot_stage ?? '', siguiente_etapa: siguiente, respuesta },\n    pairedItem: { item: i },\n  });\n});\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        96
+      ],
+      "id": "7a1e2b3c-4d5e-4f60-8a71-b2c3d4e5f601",
+      "name": "Decidir respuesta"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Cambia la etapa solo si sigue siendo la que leímos. Si llegan 2 mensajes\n-- a la vez, solo uno gana y el cliente recibe una sola respuesta.\nWITH u AS (\n  UPDATE public.leads\n  SET    bot_stage       = $2,\n         welcome_sent_at = COALESCE(welcome_sent_at, NOW())\n  WHERE  id = $1\n    AND  bot_stage IS NOT DISTINCT FROM NULLIF($3, '')\n  RETURNING id\n)\nSELECT EXISTS (SELECT 1 FROM u) AS responder;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.lead_id, $json.siguiente_etapa, $json.etapa_actual] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        448,
+        96
+      ],
+      "id": "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "name": "Avanzar etapa",
+      "credentials": {
+        "postgres": {
+          "id": "r4zAnWa13NiFdBwR",
+          "name": "Conexion base sup-vps"
+        }
+      }
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -157,7 +194,7 @@
           "conditions": [
             {
               "id": "113bbaa5-0524-464d-89ba-2298de09acf1",
-              "leftValue": "={{ $json.enviar_bienvenida }}",
+              "leftValue": "={{ $json.responder }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -173,24 +210,24 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        224,
+        672,
         96
       ],
       "id": "113bbaa5-0524-464d-89ba-2298de09acfa",
-      "name": "Enviar bienvenida?"
+      "name": "Responder?"
     },
     {
       "parameters": {
         "operation": "send",
         "phoneNumberId": "1259319843939123",
-        "recipientPhoneNumber": "={{ $json.phone }}",
-        "textBody": "={{ $('Normalizar mensajes').item.json.texto_bienvenida }}",
+        "recipientPhoneNumber": "={{ $('Decidir respuesta').item.json.phone }}",
+        "textBody": "={{ $('Decidir respuesta').item.json.respuesta }}",
         "additionalFields": {}
       },
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
       "position": [
-        448,
+        896,
         0
       ],
       "id": "3b383eca-f353-48ca-b773-f7c6ca8c4f2a",
@@ -211,13 +248,13 @@
         "operation": "executeQuery",
         "query": "INSERT INTO public.messages (lead_id, phone, sender, text, time, wa_message_id, msg_type)\nVALUES ($1, $2, 'bot', $3, NOW(), NULLIF($4, ''), 'text')\nON CONFLICT (wa_message_id) DO NOTHING;",
         "options": {
-          "queryReplacement": "={{ [$('Guardar lead y mensaje').item.json.lead_id, $('Guardar lead y mensaje').item.json.phone, $('Normalizar mensajes').item.json.texto_bienvenida, $json.messages?.[0]?.id ?? ''] }}"
+          "queryReplacement": "={{ [$('Decidir respuesta').item.json.lead_id, $('Decidir respuesta').item.json.phone, $('Decidir respuesta').item.json.respuesta, $json.messages?.[0]?.id ?? ''] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        672,
+        1120,
         0
       ],
       "id": "d86d0e6e-3581-425b-8b04-539989676736",
@@ -287,14 +324,36 @@
       "main": [
         [
           {
-            "node": "Enviar bienvenida?",
+            "node": "Decidir respuesta",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Enviar bienvenida?": {
+    "Decidir respuesta": {
+      "main": [
+        [
+          {
+            "node": "Avanzar etapa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avanzar etapa": {
+      "main": [
+        [
+          {
+            "node": "Responder?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder?": {
       "main": [
         [
           {

@@ -35,6 +35,19 @@ FROM  (SELECT phone, MIN(time::timestamptz) AS primera
 WHERE  l.phone = b.phone
   AND  l.welcome_sent_at IS NULL;
 
+-- 5) Bot de terrenos: etapa de la conversación por lead.
+--    NULL = nuevo | bienvenida | aclaracion | asesor (el bot ya no responde)
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS bot_stage text;
+
+--    Las conversaciones que ya existían quedan con el asesor para que el
+--    bot no interrumpa. Para reactivar el bot en un lead:
+--      UPDATE public.leads SET bot_stage = NULL WHERE phone = '593...';
+UPDATE public.leads l
+SET    bot_stage = 'asesor'
+WHERE  l.bot_stage IS NULL
+  AND  EXISTS (SELECT 1 FROM public.messages m WHERE m.phone = l.phone);
+
 COMMIT;
 
 -- Opcional: si el índice antiguo (phone, sender) existía solo para el

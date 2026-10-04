@@ -32,6 +32,23 @@ Archivos:
 
 Antes: 4 consultas por mensaje de texto. Ahora: 1 consulta por mensaje del cliente, más 1 solo cuando se envía el saludo.
 
+## Bot de terrenos
+
+El bot avanza por etapas guardadas en `leads.bot_stage` y solo habla de terrenos:
+
+| Etapa actual | Cliente escribe | Bot responde | Nueva etapa |
+|---|---|---|---|
+| (nuevo) | cualquier cosa | Bienvenida + "responde 1 o escribe *terrenos*" | `bienvenida` |
+| (nuevo) | ya pide info ("quiero info de terrenos") | Saludo + info + "un asesor se comunicará" | `asesor` |
+| `bienvenida` | 1 / terrenos / precio / sí... | Info + "un asesor se comunicará" | `asesor` |
+| `bienvenida` | otro tema | "Solo podemos ayudarte con terrenos..." | `aclaracion` |
+| `aclaracion` | cualquier cosa | (Info si la pide) + "un asesor se comunicará" | `asesor` |
+| `asesor` | cualquier cosa | **Nada**: responde una persona | `asesor` |
+
+- Los textos y las palabras clave se editan arriba del nodo **"Decidir respuesta"**. Completa `INFO_TERRENOS` con la información real; si queda vacío, solo se avisa que un asesor se comunicará.
+- Para que el bot vuelva a atender a un cliente: `UPDATE public.leads SET bot_stage = NULL WHERE phone = '593...';`
+- Para ver quién espera un asesor: `SELECT phone, name, last_message, last_message_time FROM public.leads WHERE bot_stage = 'asesor' ORDER BY last_message_time DESC;`
+
 ## Pasos para aplicarlo
 
 1. Haz un respaldo: `pg_dump -t leads -t messages tu_bd > respaldo.sql`.
