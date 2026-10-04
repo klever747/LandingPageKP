@@ -78,3 +78,27 @@ Para la conversación, al final de `migracion.sql` hay un `DELETE` opcional de r
 
 - **Validar la firma de Meta** (`X-Hub-Signature-256`) con el App Secret, para que nadie más pueda enviar datos falsos a tu webhook. Requiere activar *Raw Body* en el Webhook y permitir `crypto` en el nodo Code (`NODE_FUNCTION_ALLOW_BUILTIN=crypto`).
 - La columna `messages.phone` es redundante con `lead_id`. Se mantiene por compatibilidad con tus paneles; se podría eliminar más adelante.
+
+## Flujo 2: CRM → WhatsApp (respuestas del asesor)
+
+Archivo: `CRM_ENVIAR_WHATSAPP.json`. Endpoint que el CRM llama para que el asesor responda.
+
+```
+POST https://TU-N8N/webhook/crm-enviar-whatsapp
+x-api-key: <tu clave>
+Content-Type: application/json
+
+{ "phone": "593987654321", "text": "Hola, soy Ana, asesora de ventas..." }
+```
+
+| Código | Cuándo | Cuerpo |
+|---|---|---|
+| 200 | Enviado y guardado | `{ ok: true, message_id, wa_message_id, lead_id }` |
+| 400 | Falta `phone`/`text` o formato inválido | `{ ok: false, error }` |
+| 401/403 | Falta o es incorrecta la `x-api-key` | (n8n) |
+| 409 | Número sin conversación o pasaron más de 24 h desde el último mensaje del cliente | `{ ok: false, error, ultimo_mensaje_cliente }` |
+| 502 | WhatsApp rechazó el envío | `{ ok: false, error, detalle }` |
+
+Al enviar: guarda el mensaje en `messages` con `sender = 'asesor'` y pone `bot_stage = 'asesor'` para que el bot no interfiera.
+
+Para que el CRM muestre los mensajes nuevos de los clientes, puede leer `public.messages` por `lead_id` (o suscribirse con Supabase Realtime a esa tabla).

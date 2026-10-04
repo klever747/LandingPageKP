@@ -1,0 +1,356 @@
+{
+  "name": "CRM - ENVIAR WHATSAPP",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-enviar-whatsapp",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -640,
+        0
+      ],
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Webhook CRM",
+      "webhookId": "b7e4c2a0-5d1f-4e3a-9c8b-7a6f5e4d3c21"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Valida el cuerpo que envía el CRM: { \"phone\": \"5939...\", \"text\": \"...\" }\nconst b = $json.body ?? {};\nconst phone = String(b.phone ?? '').replace(/\\D/g, '');\nconst text = String(b.text ?? '').trim();\n\nlet error = '';\nif (phone.length < 8 || phone.length > 15) error = 'phone inválido: usa el formato internacional sin \"+\", ej. 593987654321';\nelse if (!text) error = 'text es obligatorio';\nelse if (text.length > 4096) error = 'text supera los 4096 caracteres que permite WhatsApp';\n\nreturn { json: { valido: !error, error, phone, text } };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        0
+      ],
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Validar datos"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a1000000-0000-4000-8000-000000000003-c",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -192,
+        0
+      ],
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Datos validos?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        32,
+        160
+      ],
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Responder 400"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Siempre devuelve 1 fila, exista o no el lead.\nSELECT\n  l.id AS lead_id,\n  u.ultimo_cliente,\n  COALESCE(u.ultimo_cliente > NOW() - INTERVAL '24 hours', false) AS dentro_ventana\nFROM (SELECT $1::text AS phone) p\nLEFT JOIN public.leads l ON l.phone = p.phone\nLEFT JOIN LATERAL (\n  SELECT MAX(m.time::timestamptz) AS ultimo_cliente\n  FROM   public.messages m\n  WHERE  m.lead_id = l.id AND m.sender = 'cliente'\n) u ON true;",
+        "options": {
+          "queryReplacement": "={{ [$json.phone] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        32,
+        -96
+      ],
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Buscar lead y ventana 24h",
+      "credentials": {
+        "postgres": {
+          "id": "r4zAnWa13NiFdBwR",
+          "name": "Conexion base sup-vps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a1000000-0000-4000-8000-000000000006-c",
+              "leftValue": "={{ $json.dentro_ventana }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        256,
+        -96
+      ],
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Dentro de 24h?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.lead_id ? 'Pasaron más de 24 h desde el último mensaje del cliente. WhatsApp solo permite escribirle con una plantilla aprobada.' : 'Este número no tiene conversación registrada.', ultimo_mensaje_cliente: $json.ultimo_cliente } }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        480,
+        64
+      ],
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Responder 409"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1259319843939123",
+        "recipientPhoneNumber": "={{ $('Validar datos').item.json.phone }}",
+        "textBody": "={{ $('Validar datos').item.json.text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        -192
+      ],
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Enviar por WhatsApp",
+      "webhookId": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "KnKSfdRrnADnjlk5",
+          "name": "WhatsApp account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: 'WhatsApp rechazó el envío', detalle: String($json.error?.message ?? $json.error ?? '') } }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        704,
+        -16
+      ],
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Responder 502"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Guarda la respuesta del asesor y apaga el bot para este cliente.\nWITH ins AS (\n  INSERT INTO public.messages (lead_id, phone, sender, text, time, wa_message_id, msg_type)\n  VALUES ($1, $2, 'asesor', $3, NOW(), NULLIF($4, ''), 'text')\n  ON CONFLICT (wa_message_id) DO NOTHING\n  RETURNING id\n), bot AS (\n  UPDATE public.leads SET bot_stage = 'asesor'\n  WHERE  id = $1 AND bot_stage IS DISTINCT FROM 'asesor'\n  RETURNING id\n)\nSELECT (SELECT id FROM ins) AS message_id, (SELECT count(*) FROM bot) AS bot_apagado;",
+        "options": {
+          "queryReplacement": "={{ [$('Buscar lead y ventana 24h').item.json.lead_id, $('Validar datos').item.json.phone, $('Validar datos').item.json.text, $json.messages?.[0]?.id ?? ''] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        704,
+        -208
+      ],
+      "id": "a1000000-0000-4000-8000-00000000000a",
+      "name": "Guardar mensaje del asesor",
+      "credentials": {
+        "postgres": {
+          "id": "r4zAnWa13NiFdBwR",
+          "name": "Conexion base sup-vps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message_id: $json.message_id, wa_message_id: $('Enviar por WhatsApp').item.json.messages?.[0]?.id, lead_id: $('Buscar lead y ventana 24h').item.json.lead_id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        928,
+        -208
+      ],
+      "id": "a1000000-0000-4000-8000-00000000000b",
+      "name": "Responder 200"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook CRM": {
+      "main": [
+        [
+          {
+            "node": "Validar datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar datos": {
+      "main": [
+        [
+          {
+            "node": "Datos validos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos validos?": {
+      "main": [
+        [
+          {
+            "node": "Buscar lead y ventana 24h",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar lead y ventana 24h": {
+      "main": [
+        [
+          {
+            "node": "Dentro de 24h?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dentro de 24h?": {
+      "main": [
+        [
+          {
+            "node": "Enviar por WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 409",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar por WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Guardar mensaje del asesor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 502",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar mensaje del asesor": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
