@@ -22,7 +22,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Valida el cuerpo que envía el CRM: { \"phone\": \"5939...\", \"text\": \"...\" }\nconst b = $json.body ?? {};\nconst phone = String(b.phone ?? '').replace(/\\D/g, '');\nconst text = String(b.text ?? '').trim();\n\nlet error = '';\nif (phone.length < 8 || phone.length > 15) error = 'phone inválido: usa el formato internacional sin \"+\", ej. 593987654321';\nelse if (!text) error = 'text es obligatorio';\nelse if (text.length > 4096) error = 'text supera los 4096 caracteres que permite WhatsApp';\n\nreturn { json: { valido: !error, error, phone, text } };\n"
+        "jsCode": "// Valida el cuerpo que envía el CRM. Dos formas:\n//   { \"lead_id\": 123, \"text\": \"...\" }                                   (recomendada)\n//   { \"phone\": \"5939...\", \"phone_number_id\": \"<línea de la agencia>\", \"text\": \"...\" }\n// La respuesta sale siempre por el número de la agencia dueña del lead.\nconst b = $json.body ?? {};\nconst lead_id = Number.parseInt(b.lead_id, 10) || 0;\nconst phone = String(b.phone ?? '').replace(/\\D/g, '');\nconst phone_number_id = String(b.phone_number_id ?? '').replace(/\\D/g, '');\nconst text = String(b.text ?? '').trim();\n\nlet error = '';\nif (!lead_id && !(phone.length >= 8 && phone.length <= 15 && phone_number_id))\n  error = 'Envía lead_id, o phone (formato internacional sin \"+\", ej. 593987654321) junto con phone_number_id';\nelse if (!text) error = 'text es obligatorio';\nelse if (text.length > 4096) error = 'text supera los 4096 caracteres que permite WhatsApp';\n\nreturn { json: { valido: !error, error, lead_id, phone, phone_number_id, text } };\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -87,9 +87,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Siempre devuelve 1 fila, exista o no el lead.\nSELECT\n  l.id AS lead_id,\n  u.ultimo_cliente,\n  COALESCE(u.ultimo_cliente > NOW() - INTERVAL '24 hours', false) AS dentro_ventana\nFROM (SELECT $1::text AS phone) p\nLEFT JOIN public.leads l ON l.phone = p.phone\nLEFT JOIN LATERAL (\n  SELECT MAX(m.time::timestamptz) AS ultimo_cliente\n  FROM   public.messages m\n  WHERE  m.lead_id = l.id AND m.sender = 'cliente'\n) u ON true;",
+        "query": "-- Busca el lead por id, o por (teléfono, línea). Siempre devuelve 1 fila.\nSELECT\n  l.id              AS lead_id,\n  l.phone           AS phone,\n  l.phone_number_id AS phone_number_id,\n  u.ultimo_cliente,\n  COALESCE(u.ultimo_cliente > NOW() - INTERVAL '24 hours', false) AS dentro_ventana\nFROM (SELECT NULLIF($1::int, 0) AS lead_id, $2::text AS phone, $3::text AS linea) p\nLEFT JOIN public.leads l\n       ON (p.lead_id IS NOT NULL AND l.id = p.lead_id)\n       OR (p.lead_id IS NULL AND l.phone = p.phone AND l.phone_number_id = p.linea)\nLEFT JOIN LATERAL (\n  SELECT MAX(m.time::timestamptz) AS ultimo_cliente\n  FROM   public.messages m\n  WHERE  m.lead_id = l.id AND m.sender = 'cliente'\n) u ON true;",
         "options": {
-          "queryReplacement": "={{ [$json.phone] }}"
+          "queryReplacement": "={{ [$json.lead_id, $json.phone, $json.phone_number_id] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -144,7 +144,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: false, error: $json.lead_id ? 'Pasaron más de 24 h desde el último mensaje del cliente. WhatsApp solo permite escribirle con una plantilla aprobada.' : 'Este número no tiene conversación registrada.', ultimo_mensaje_cliente: $json.ultimo_cliente } }}",
+        "responseBody": "={{ { ok: false, error: $json.lead_id ? 'Pasaron más de 24 h desde el último mensaje del cliente. WhatsApp solo permite escribirle con una plantilla aprobada.' : 'No existe el lead (revisa lead_id, o phone + phone_number_id).', ultimo_mensaje_cliente: $json.ultimo_cliente } }}",
         "options": {
           "responseCode": 409
         }
@@ -161,8 +161,8 @@
     {
       "parameters": {
         "operation": "send",
-        "phoneNumberId": "1259319843939123",
-        "recipientPhoneNumber": "={{ $('Validar datos').item.json.phone }}",
+        "phoneNumberId": "={{ $('Buscar lead y ventana 24h').item.json.phone_number_id }}",
+        "recipientPhoneNumber": "={{ $('Buscar lead y ventana 24h').item.json.phone }}",
         "textBody": "={{ $('Validar datos').item.json.text }}",
         "additionalFields": {}
       },
@@ -203,9 +203,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Guarda la respuesta del asesor y apaga el bot para este cliente.\nWITH ins AS (\n  INSERT INTO public.messages (lead_id, phone, sender, text, time, wa_message_id, msg_type)\n  VALUES ($1, $2, 'asesor', $3, NOW(), NULLIF($4, ''), 'text')\n  ON CONFLICT (wa_message_id) DO NOTHING\n  RETURNING id\n), bot AS (\n  UPDATE public.leads SET bot_stage = 'asesor'\n  WHERE  id = $1 AND bot_stage IS DISTINCT FROM 'asesor'\n  RETURNING id\n)\nSELECT (SELECT id FROM ins) AS message_id, (SELECT count(*) FROM bot) AS bot_apagado;",
+        "query": "-- Guarda la respuesta del asesor y apaga el bot para este cliente.\nWITH ins AS (\n  INSERT INTO public.messages (lead_id, phone, phone_number_id, sender, text, time, wa_message_id, msg_type)\n  VALUES ($1, $2, $5, 'asesor', $3, NOW(), NULLIF($4, ''), 'text')\n  ON CONFLICT (wa_message_id) DO NOTHING\n  RETURNING id\n), bot AS (\n  UPDATE public.leads SET bot_stage = 'asesor'\n  WHERE  id = $1 AND bot_stage IS DISTINCT FROM 'asesor'\n  RETURNING id\n)\nSELECT (SELECT id FROM ins) AS message_id, (SELECT count(*) FROM bot) AS bot_apagado;",
         "options": {
-          "queryReplacement": "={{ [$('Buscar lead y ventana 24h').item.json.lead_id, $('Validar datos').item.json.phone, $('Validar datos').item.json.text, $json.messages?.[0]?.id ?? ''] }}"
+          "queryReplacement": "={{ [$('Buscar lead y ventana 24h').item.json.lead_id, $('Buscar lead y ventana 24h').item.json.phone, $('Validar datos').item.json.text, $json.messages?.[0]?.id ?? '', $('Buscar lead y ventana 24h').item.json.phone_number_id] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",

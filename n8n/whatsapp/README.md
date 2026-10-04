@@ -102,3 +102,21 @@ Content-Type: application/json
 Al enviar: guarda el mensaje en `messages` con `sender = 'asesor'` y pone `bot_stage = 'asesor'` para que el bot no interfiera.
 
 Para que el CRM muestre los mensajes nuevos de los clientes, puede leer `public.messages` por `lead_id` (o suscribirse con Supabase Realtime a esa tabla).
+
+## Varias agencias (un número de WhatsApp por agencia)
+
+Migración: `migracion_multilinea.sql` (después de `migracion.sql`).
+
+- Tabla `whatsapp_lineas`: una fila por agencia, con `phone_number_id` (id del número en Meta), `agencia`, `bienvenida`, `info_terrenos` y `bot_activo`.
+- Un lead por **(cliente, agencia)**: si alguien escribe a dos agencias, son dos conversaciones con su propio avance del bot.
+- El bot y el asesor responden siempre **desde el número de la agencia** que recibió el mensaje.
+- `bienvenida` admite `{nombre}` y `{agencia}`. Vacío = texto por defecto.
+- `bot_activo = false` apaga el bot de esa agencia (los mensajes se siguen guardando).
+
+El endpoint del CRM ahora recibe `lead_id` (recomendado) o `phone` + `phone_number_id`:
+
+```json
+{ "lead_id": 123, "text": "Hola, soy Ana de Agencia Norte..." }
+```
+
+Para que cada agencia vea solo sus clientes en el CRM: `WHERE phone_number_id = '<línea de la agencia>'`.
