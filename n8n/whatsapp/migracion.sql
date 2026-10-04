@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS messages_lead_id_time_idx
 --    recibirlo de nuevo con el flujo nuevo.
 UPDATE public.leads l
 SET    welcome_sent_at = b.primera
-FROM  (SELECT phone, MIN(time) AS primera
+FROM  (SELECT phone, MIN(time::timestamptz) AS primera
        FROM   public.messages
        WHERE  sender = 'bot'
        GROUP  BY phone) b
